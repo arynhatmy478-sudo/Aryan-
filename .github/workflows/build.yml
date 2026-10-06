@@ -1,0 +1,62 @@
+name: Build Hatami Focus Pro
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find and extract project ZIP
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Filter "*.zip" | Select-Object -First 1
+          if (-not $zip) {
+            Write-Error "Project ZIP not found"
+            exit 1
+          }
+
+          New-Item -ItemType Directory -Force -Path extracted | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath extracted -Force
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Find project
+        shell: pwsh
+        run: |
+          $project = Get-ChildItem -Path extracted -Filter "HatamiFocus.csproj" -Recurse | Select-Object -First 1
+          if (-not $project) {
+            Write-Error "HatamiFocus.csproj not found"
+            exit 1
+          }
+          "PROJECT=$($project.FullName)" >> $env:GITHUB_ENV
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          dotnet restore "$env:PROJECT"
+          dotnet publish "$env:PROJECT" `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o publish
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish\* -DestinationPath HatamiFocus-Pro-Windows.zip
+
+      - name: Upload EXE package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HatamiFocus-Pro-Windows
+          path: HatamiFocus-Pro-Windows.zip
